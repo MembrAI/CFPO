@@ -1,8 +1,9 @@
 # CFPO: Counterfactual Policy Optimization for Multimodal Reasoning
 
 [![GitHub](https://img.shields.io/badge/💻%20GitHub-Repo-blue)](https://github.com/Raven-July/CFPO)
-[![arXiv](https://img.shields.io/badge/arXiv-2606.23206-b31b1b.svg)](https://arxiv.org/abs/2606.23206)
-[![Hugging Face](https://img.shields.io/badge/🤗%20Hugging%20Face-Models-yellow)](https://huggingface.co)
+[![ArXiv](https://img.shields.io/badge/arXiv-2606.23206-b31b1b.svg)](https://arxiv.org/abs/2606.23206)
+[![Hugging Face](https://img.shields.io/badge/🤗%20Hugging%20Face-Models-yellow)](https://huggingface.co/collections/RavenInJuly/cfpo-models)
+[![Hugging Face](https://img.shields.io/badge/🤗%20Hugging%20Face-Data-yellow)](https://huggingface.co/datasets/RavenInJuly/CFPO_Datasets)
 [![License](https://img.shields.io/badge/License-Apache--2.0-green.svg)](LICENSE)
 
 **CFPO** is a counterfactual reinforcement learning framework for multimodal reasoning. It is designed to improve the causal consistency between visual perception and textual reasoning in Large Vision-Language Models (LVLMs), especially when standard outcome-driven RL methods encourage models to obtain correct answers through language priors, shortcut learning, or hallucinated reasoning paths.
@@ -16,10 +17,37 @@ Instead of only rewarding final-answer correctness, CFPO explicitly tests whethe
 ## Highlights
 
 * **Counterfactual policy optimization for LVLMs.** CFPO introduces cross-modal counterfactual intervention into RL-style multimodal reasoning training.
-* **Representation-level visual evidence test.** CFPO intervenes on attention outputs rather than applying coarse input-level random masking.
-* **Improved causal grounding.** The method targets common multimodal reasoning failures, including visual saliency deficiency, saliency misalignment, and saliency inertia.
+* **Representation-level visual evidence test.** CFPO intervenes on self-attention layers in language decoders rather than applying coarse input-level random masking.
+* **Improved causal grounding.** The method targets common multimodal reasoning failures, including visual saliency deficiency, misalignment, and inertia.
 * **Compatible with existing RL pipelines.** CFPO is implemented on top of GRPO and DAPO-style policy optimization and does not require external reward models or additional supervised fine-tuning.
-* **Stronger multimodal reasoning performance.** In the paper, CFPO consistently improves over standard RL baselines and perception-aware RL baselines on both real-world-centric and mathematic-centric multimodal reasoning benchmarks.
+* **Stronger multimodal reasoning performance.** CFPO consistently improves over standard RL baselines (GRPO/DAPO) by 3.17-6.25% and perception-aware (PAPO) baselines by 1.32-2.13%. Both real-world-centric and mathematic-centric multimodal reasoning benchmarks are included.
+
+## Main Results Using Qwen-2.5-VL-3B
+<p align="center">
+  <img src="./static/main-results-2.5.png" width="95%" alt="main-results-2.5">
+</p>
+
+## Early Results in Progress
+### Using Qwen-3-VL-2B-Thinking (Code coming soon)
+
+Early Results demonstrate particularly strong gains on this architecture (55.92% vs. 46.84% for GRPO and 49.30% for PAPO_G). Note that Metrics in the original [Papo Paper](https://arxiv.org/abs/2507.06448) are reused.
+<p align="center">
+  <img src="./static/main-results-3.png" width="95%" alt="main-results-3">
+</p>
+
+
+### Using Qwen-2.5-VL-7B (Currently being fine-tuned)
+
+Early results show improving average accuracy from 62.30% to 63.43% over the GRPO baseline, outperforming PAPO_G on 7 out of 10 benchmarks without any additional hyperparameter tuning.
+
+<p align="center">
+  <img src="./static/main-results-2.5-7b.png" width="95%" alt="main-results-2.5">
+</p>
+
+## Cases
+<p align="center">
+  <img src="./static/cases.png" width="95%" alt="cases">
+</p>
 
 ## Method Overview
 
@@ -43,11 +71,15 @@ The resulting variants are denoted as:
 * **CFPO-D**: CFPO integrated with DAPO.
 
 ## Data
-Datasets WIP.
+The CFPO datasets are released on Hugging Face: [RavenInJuly/CFPO_Datasets](https://huggingface.co/datasets/RavenInJuly/CFPO_Datasets).
 
-The paper uses **ViRL39K** as the training set, which contains verifiable multimodal reasoning QA pairs for vision-language reinforcement learning.
+The release contains image archives (`*_images.zip`) and annotation files for training, validation, and test splits (`*_train.json`, `*_val_V3.json`, `*_test.json`). Image paths in each JSON file refer to files inside the corresponding image archive.
 
-Please check the dataset licenses and original sources before redistribution. Some benchmark datasets may need to be downloaded separately from their official repositories.
+Training data is adapted from [TIGER-Lab/ViRL39K](https://huggingface.co/datasets/TIGER-Lab/ViRL39K). Validation and test data are constructed from multiple multimodal reasoning benchmarks, including C-VQA, LogicVista, MARS-Bench, MMK12, MMMU-Pro, MathVerse, TextVQA, We-Math, and Geometry3K. Validation sets are generally stratified samples from the corresponding test sets and are used only for training monitoring, except for Geometry3K.
+
+Each annotation item contains `image`, `problem`, `answer`, `id`, and `type` fields.
+
+After downloading and extracting the data, update `examples/datasets_math_train.json` and `examples/datasets_math_val.json` with the corresponding annotation JSON paths (`dataset`) and extracted image folder paths (`image`).
 
 ## Installation
 
@@ -105,7 +137,7 @@ sh ./examples/qwen2_5_vl_3b_CFPO-D-math.sh
 sh ./examples/qwen2_5_vl_3b_DAPO-math.sh
 ```
  
-Evaluation and inference scripts will be added upon rearrangement of the evaluation pipeline.
+See [Evaluation](#evaluation) for inference commands.
  
 ## Training Details
  
@@ -121,37 +153,57 @@ The 3B model variants (CFPO_G / CFPO_D) are trained on **2× NVIDIA A800 80G GPU
 | Rollout batch size | 384 |
 | Responses per prompt (G) | 5 |
 | Response format | `<think>...</think>` + `\boxed{}` |
-| Counterfactual coefficient γ (CFPO_G) | 0.02 (no entropy loss) |
-| Counterfactual coefficient γ (CFPO_D) | 0.01 (+ entropy loss η=0.03) |
+| Counterfactual coefficient γ (CFPO-G) | 0.02, without Ent regularization |
+| Counterfactual coefficient γ (CFPO-D) | 0.01, with Ent regularization |
 | Saliency threshold λ | 2 (outlier criterion: μ + 2σ) |
  
 All hyperparameters are also specified directly in the shell scripts listed under [Quick Start](#quick-start).
  
 > **Why 2× A800?** The CFPO counterfactual forward pass adds approximately 9.6 GB of peak VRAM overhead and roughly 350 s/step additional training time versus the GRPO baseline (see Appendix B of the paper). This overhead is attributable to an engineering bottleneck—fine-grained latent-level interventions currently interrupt fused kernel execution (e.g., FlashAttention), triggering an operator fallback. Custom CUDA kernel implementations are planned for future releases to substantially reduce this cost.
  
+## Checkpoints
+
+- [CFPO-G-Qwen2.5-VL-3B](https://huggingface.co/RavenInJuly/CFPO-G-Qwen2.5-VL-3B)
+- [CFPO-D-Qwen2.5-VL-3B](https://huggingface.co/RavenInJuly/CFPO-D-Qwen2.5-VL-3B)
+- PAPO models: [PAPO-Qwen collection](https://huggingface.co/collections/PAPOGalaxy/papo-qwen)
+
+More CFPO model checkpoints are on the way.
+
+## Evaluation
+
+For CFPO math evaluation, run:
+
+```bash
+sh ./Counterfactual-Eval/inference_pipeline_math_cfpo.sh
+```
+
+PAPO models can also be evaluated with:
+
+```bash
+sh ./Counterfactual-Eval/inference_pipeline_math_papo.sh
+```
+
+For PAPO evaluation, keep `--papo` enabled because its template and system-prompt usage differ from ours.
+ 
 ## Implementation Status
  
 | Component | Status |
 |---|---|
-| Training algorithm — CFPO_G / CFPO_D on Qwen2.5-VL-3B | ✅ Released (validation ongoing) |
-| Datasets | 🔄 In progress |
+| Training algorithm — CFPO_G / CFPO_D on Qwen2.5-VL-3B | ✅ Released |
+| Datasets | ✅ Released |
+| Qwen2.5-VL-3B fine-tuned checkpoints | ✅ Released |
+| Evaluation pipeline & inference scripts | ✅ Released |
 | Training algorithm — CFPO_G on Qwen3-VL-2B-Thinking | 🔄 In progress |
-| Qwen2.5-VL-3B fine-tuned checkpoints | 🔄 In progress |
 | Qwen3-VL-2B-Thinking fine-tuned checkpoints | 🔄 In progress |
-| Evaluation pipeline & inference scripts | 🔄 In progress |
 | Qwen2.5-VL-7B fine-tuned checkpoints | 🔜 Coming soon |
 | Reduced training overhead | 📋 Planned |
  
 **Release notes:**
  
-- The core CFPO training algorithm has been released. Ongoing validation is in progress; follow-up patches will be published to resolve any remaining issues. Some module paths may require minor adjustments across different CUDA or PyTorch environments.
+- The core CFPO training algorithm has been released. Some module paths may require minor adjustments across different CUDA or PyTorch environments.
 - The **Qwen2.5-VL-7B** checkpoint is currently being fine-tuned. Preliminary paper results (Table 6) show CFPO_G improving average accuracy from 62.30% to 63.43% over the GRPO baseline, outperforming PAPO_G on 7 out of 10 benchmarks without any additional hyperparameter tuning.
 - A checkpoint based on **Qwen3-VL-2B-Thinking** is forthcoming. Early results (Table 5 in the paper) demonstrate particularly strong gains on this architecture (55.92% vs. 46.84% for GRPO and 49.30% for PAPO_G), reflecting CFPO's effectiveness on models with architectural advances such as DeepStack and Interleaved-MRoPE.
-Please open an issue if you encounter compatibility problems or unexpected behavior. PRs for bug fixes are always welcome.
- 
-## Evaluation & Reproduction
- 
-Evaluation commands and dataset preparation scripts will be added once the evaluation pipeline is finalized. When reproducing results, please use the exact evaluation settings described in the paper (8 rollouts per sample, specified benchmark subsets) to ensure comparability with reported numbers.
+- Please open an issue if you encounter compatibility problems or unexpected behavior. PRs for bug fixes are always welcome.
  
 ## Acknowledgements
  
